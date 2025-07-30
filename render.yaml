@@ -1,48 +1,46 @@
-# render.yaml
 services:
   - type: web
     name: stake-code-claimer-server
     env: python
-    plan: free # أو اختر خطة مدفوعة إذا لزم
+    plan: free
     buildCommand: "pip install -r requirements.txt"
+    pythonVersion: 3.11.9
     startCommand: "gunicorn --bind 0.0.0.0:$PORT server:app"
     envVars:
       - key: DATABASE_URL
-        # Render will automatically set this for a Postgres database if you add one
-        # For local SQLite, this can be left empty or omitted
       - key: FLASK_ENV
         value: production
-      # Add other environment variables as needed for your server logic
-      # e.g., if you add authentication or other features
 
   - type: worker
     name: stake-code-claimer-bot
     env: python
-    plan: free # أو اختر خطة مدفوعة إذا لزم
+    plan: free
     buildCommand: "pip install -r requirements.txt"
+    pythonVersion: 3.11.9
     startCommand: "python bot.py"
     envVars:
       - key: BOT_TOKEN
-        sync: false # This means the value must be set in the Render dashboard
+        sync: false
       - key: SUPPORT_USER_ID
-        sync: false # This means the value must be set in the Render dashboard
+        sync: false
       - key: SCRIPT_SERVER_URL
-        sync: false # This means the value must be set in the Render dashboard
+        sync: false
 
   - type: worker
     name: stake-code-claimer-monitor
     env: python
-    plan: free # أو اختر خطة مدفوعة إذا لزم
+    plan: free
     buildCommand: "pip install -r requirements.txt"
+    pythonVersion: 3.11.9
     startCommand: "python monitor_bot.py"
     envVars:
       - key: API_ID
-        sync: false # This means the value must be set in the Render dashboard
+        sync: false
       - key: API_HASH
-        sync: false # This means the value must be set in the Render dashboard
+        sync: false
       - key: CHANNEL_TO_POST
-        sync: false # This means the value must be set in the Render dashboard
+        sync: false
       - key: WATCHED_CHANNELS
-        sync: false # Optional: Comma-separated list
+        sync: false
       - key: MONITOR_SERVER_URL
-        sync: false # This means the value must be set in the Render dashboard
+        sync: false
