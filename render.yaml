@@ -1,0 +1,48 @@
+# render.yaml
+services:
+  - type: web
+    name: stake-code-claimer-server
+    env: python
+    plan: free # أو اختر خطة مدفوعة إذا لزم
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT server:app"
+    envVars:
+      - key: DATABASE_URL
+        # Render will automatically set this for a Postgres database if you add one
+        # For local SQLite, this can be left empty or omitted
+      - key: FLASK_ENV
+        value: production
+      # Add other environment variables as needed for your server logic
+      # e.g., if you add authentication or other features
+
+  - type: worker
+    name: stake-code-claimer-bot
+    env: python
+    plan: free # أو اختر خطة مدفوعة إذا لزم
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python bot.py"
+    envVars:
+      - key: BOT_TOKEN
+        sync: false # This means the value must be set in the Render dashboard
+      - key: SUPPORT_USER_ID
+        sync: false # This means the value must be set in the Render dashboard
+      - key: SCRIPT_SERVER_URL
+        sync: false # This means the value must be set in the Render dashboard
+
+  - type: worker
+    name: stake-code-claimer-monitor
+    env: python
+    plan: free # أو اختر خطة مدفوعة إذا لزم
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python monitor_bot.py"
+    envVars:
+      - key: API_ID
+        sync: false # This means the value must be set in the Render dashboard
+      - key: API_HASH
+        sync: false # This means the value must be set in the Render dashboard
+      - key: CHANNEL_TO_POST
+        sync: false # This means the value must be set in the Render dashboard
+      - key: WATCHED_CHANNELS
+        sync: false # Optional: Comma-separated list
+      - key: MONITOR_SERVER_URL
+        sync: false # This means the value must be set in the Render dashboard

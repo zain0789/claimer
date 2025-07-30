@@ -1,0 +1,11 @@
+# requirements.txt
+Flask==2.3.2
+Flask-SQLAlchemy==3.0.5
+pyTelegramBotAPI==4.14.0
+Telethon==1.29.0
+requests==2.31.0
+opencv-python==4.8.0.74
+pytesseract==0.3.10
+Pillow==10.0.0
+gunicorn==21.2.0 # For running on Render
+psycopg2-binary==2.9.7 # For PostgreSQL on Render (if needed)

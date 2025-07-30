@@ -1,0 +1,925 @@
+// ==UserScript==
+// @name         Stake Code Auto Claimer Top Bar
+// @namespace    http://tampermonkey.net/
+// @version      3.11
+// @description  Top bar interface with improved claiming - UI unchanged
+// @author       StakeBot
+// @match        https://stake.com/*
+// @grant        GM_xmlhttpRequest
+// @grant        GM_addStyle
+// @connect      localhost
+// @connect      127.0.0.1
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // الرمز الخاص بالمستخدم - استبدل هذا بالرمز الصحيح من بوت التلغرام
+    const SCRIPT_TOKEN = "..............";
+    const SERVER_URL = "http://127.0.0.1:5000";
+    // اسم المستخدم - يمكن تحديثه ديناميكياً من السيرفر لاحقاً
+    const USERNAME = ".........";
+
+    // متغيرات النظام
+    let isClaiming = false;
+    let claimHistory = [];
+    let autoClaimEnabled = false;
+    let soundEnabled = true;
+
+    // إنشاء أنماط CSS للواجهة العلوية الكاملة (دون تعديل على الشكل)
+    function createTopBarStyles() {
+        GM_addStyle(`
+            /* شريط الأدوات العلوي الكامل */
+            #stake-top-toolbar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                background: linear-gradient(90deg, #0d1b2a, #1b263b);
+                color: #e0f7fa;
+                padding: 8px 15px;
+                z-index: 10001;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+                border-bottom: 2px solid #4caf50;
+                backdrop-filter: blur(10px);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 12px;
+                font-size: 12px;
+            }
+
+            /* تحريك المحتوى الأساسي للأسفل */
+            body {
+                padding-top: 45px !important;
+                margin-top: 0 !important;
+            }
+
+            #stake-toolbar-left {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+
+            #stake-toolbar-right {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+
+            .toolbar-section {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .toolbar-user-info {
+                background: rgba(76, 175, 80, 0.2);
+                padding: 4px 10px;
+                border-radius: 15px;
+                border: 1px solid #4caf50;
+                font-size: 11px;
+                font-weight: 600;
+                color: #4caf50;
+            }
+
+            .toolbar-title {
+                font-size: 16px;
+                font-weight: bold;
+                color: #4caf50;
+                text-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .toolbar-btn {
+                background: linear-gradient(45deg, #2196f3, #1976d2);
+                color: white;
+                border: none;
+                padding: 5px 12px;
+                border-radius: 15px;
+                cursor: pointer;
+                font-size: 11px;
+                font-weight: 600;
+                transition: all 0.2s ease;
+                border: 1px solid rgba(255,255,255,0.2);
+                white-space: nowrap;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+            }
+
+            .toolbar-btn:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            }
+
+            .toolbar-btn.success {
+                background: linear-gradient(45deg, #4caf50, #388e3c);
+            }
+
+            .toolbar-btn.danger {
+                background: linear-gradient(45deg, #f44336, #d32f2f);
+            }
+
+            .toolbar-btn.warning {
+                background: linear-gradient(45deg, #ff9800, #f57c00);
+            }
+
+            .status-indicator-top {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                background: #f44336;
+                display: inline-block;
+                box-shadow: 0 0 5px rgba(244, 67, 54, 0.3);
+            }
+
+            .status-indicator-top.active {
+                background: #4caf50;
+                box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+            }
+
+            .status-indicator-top.claiming {
+                background: #ff9800;
+                animation: pulse 1s infinite;
+                box-shadow: 0 0 5px rgba(255, 152, 0, 0.3);
+            }
+
+            @keyframes pulse {
+                0% { opacity: 1; transform: scale(1); }
+                50% { opacity: 0.7; transform: scale(1.1); }
+                100% { opacity: 1; transform: scale(1); }
+            }
+
+            .toolbar-toggle {
+                position: relative;
+                display: inline-block;
+                width: 30px;
+                height: 16px;
+            }
+
+            .toolbar-toggle input {
+                opacity: 0;
+                width: 0;
+                height: 0;
+            }
+
+            .toolbar-slider {
+                position: absolute;
+                cursor: pointer;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: #ccc;
+                transition: .3s;
+                border-radius: 16px;
+            }
+
+            .toolbar-slider:before {
+                position: absolute;
+                content: "";
+                height: 12px;
+                width: 12px;
+                left: 2px;
+                bottom: 2px;
+                background-color: white;
+                transition: .3s;
+                border-radius: 50%;
+            }
+
+            input:checked + .toolbar-slider {
+                background-color: #2196F3;
+            }
+
+            input:checked + .toolbar-slider:before {
+                transform: translateX(14px);
+            }
+
+            .toolbar-status-text {
+                font-size: 11px;
+                font-weight: 500;
+                white-space: nowrap;
+                color: #e0f7fa;
+            }
+
+            .toolbar-history {
+                position: absolute;
+                top: 45px;
+                left: 15px;
+                background: #1b263b;
+                color: #e0f7fa;
+                padding: 15px;
+                border-radius: 8px;
+                z-index: 10000;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+                border: 1px solid #4caf50;
+                min-width: 280px;
+                max-width: 400px;
+                max-height: 300px;
+                overflow-y: auto;
+                display: none;
+                font-size: 11px;
+            }
+
+            .history-item-top {
+                padding: 8px;
+                border-bottom: 1px solid rgba(255,255,255,0.15);
+                font-size: 10px;
+            }
+
+            .history-item-top:last-child {
+                border-bottom: none;
+            }
+
+            .code-value-top {
+                color: #4caf50;
+                font-weight: 600;
+                font-size: 11px;
+            }
+
+            #close-history-top {
+                background: #f44336;
+                border: none;
+                color: white;
+                cursor: pointer;
+                font-size: 14px;
+                width: 20px;
+                height: 20px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: bold;
+            }
+
+            /* تحسينات للشاشات الصغيرة */
+            @media (max-width: 768px) {
+                #stake-top-toolbar {
+                    flex-direction: column;
+                    gap: 8px;
+                    padding: 6px 10px;
+                    font-size: 11px;
+                }
+
+                body {
+                    padding-top: 80px !important;
+                }
+
+                #stake-toolbar-left, #stake-toolbar-right {
+                    width: 100%;
+                    justify-content: center;
+                    flex-wrap: wrap;
+                }
+
+                .toolbar-title {
+                    font-size: 14px;
+                }
+
+                .toolbar-btn {
+                    padding: 4px 10px;
+                    font-size: 10px;
+                }
+
+                .toolbar-history {
+                    top: 80px;
+                    left: 10px;
+                    padding: 12px;
+                    font-size: 10px;
+                }
+            }
+        `);
+    }
+
+    // إنشاء شريط الأدوات العلووي الكامل (دون تعديل على الشكل)
+    function createTopToolbar() {
+        // التأكد من أن العنصر ما موجود من قبل
+        if (document.getElementById('stake-top-toolbar')) {
+            return;
+        }
+
+        const toolbar = document.createElement('div');
+        toolbar.id = 'stake-top-toolbar';
+        toolbar.innerHTML = `
+            <div id="stake-toolbar-left">
+                <span class="toolbar-title">🤖 Stake Claimer</span>
+                <span class="toolbar-user-info">👤 ${USERNAME}</span>
+                <span id="top-status-indicator" class="status-indicator-top"></span>
+                <span id="top-status-text" class="toolbar-status-text">جاري التحقق...</span>
+            </div>
+
+            <div id="stake-toolbar-right">
+                <button id="manual-check-top" class="toolbar-btn">🔍 فحص</button>
+                <button id="turbo-claim-top" class="toolbar-btn danger">🚀 Turbo</button>
+
+                <div class="toolbar-section">
+                    <span style="font-size: 11px; font-weight: 600;">🔊:</span>
+                    <button id="toggle-sound-top" class="toolbar-btn">مفعل</button>
+                </div>
+
+                <div class="toolbar-section">
+                    <span style="font-size: 11px; font-weight: 600;">⚡:</span>
+                    <label class="toolbar-toggle">
+                        <input type="checkbox" id="auto-claim-toggle-top">
+                        <span class="toolbar-slider"></span>
+                    </label>
+                    <button id="toggle-auto-claim-top" class="toolbar-btn warning">تفعيل</button>
+                </div>
+
+                <button id="show-history-top" class="toolbar-btn">📜 السجل</button>
+            </div>
+        `;
+
+        document.body.insertBefore(toolbar, document.body.firstChild);
+
+        // إضافة الأحداث
+        document.getElementById('manual-check-top').addEventListener('click', checkForNewCodes);
+        document.getElementById('turbo-claim-top').addEventListener('click', turboClaim);
+        document.getElementById('toggle-sound-top').addEventListener('click', toggleSound);
+        document.getElementById('auto-claim-toggle-top').addEventListener('change', function() {
+            autoClaimEnabled = this.checked;
+            updateAutoClaimButton();
+        });
+        document.getElementById('toggle-auto-claim-top').addEventListener('click', toggleAutoClaim);
+        document.getElementById('show-history-top').addEventListener('click', showHistory);
+    }
+
+    // إنشاء نافذة السجل (دون تعديل على الشكل)
+    function createHistoryPanel() {
+        // التأكد من أن العنصر ما موجود من قبل
+        if (document.getElementById('toolbar-history-panel')) {
+            return;
+        }
+
+        const historyPanel = document.createElement('div');
+        historyPanel.id = 'toolbar-history-panel';
+        historyPanel.className = 'toolbar-history';
+        historyPanel.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <strong style="font-size: 13px; color: #4caf50;">📜 سجل المطالبات</strong>
+                <button id="close-history-top">✕</button>
+            </div>
+            <div id="history-content-top" style="font-size: 10px;"></div>
+        `;
+
+        document.body.appendChild(historyPanel);
+
+        // إضافة الأحداث للسجل
+        document.getElementById('close-history-top').addEventListener('click', hideHistory);
+    }
+
+    // تحديث زر المطالبة التلقائية
+    function updateAutoClaimButton() {
+        const toggleBtn = document.getElementById('toggle-auto-claim-top');
+        const checkbox = document.getElementById('auto-claim-toggle-top');
+
+        if (toggleBtn && checkbox) {
+            checkbox.checked = autoClaimEnabled;
+            toggleBtn.textContent = autoClaimEnabled ? 'إيقاف' : 'تفعيل';
+            toggleBtn.className = autoClaimEnabled ? 'toolbar-btn success' : 'toolbar-btn warning';
+        }
+    }
+
+    // تحديث زر الأصوات
+    function updateSoundButton() {
+        const soundBtn = document.getElementById('toggle-sound-top');
+        if (soundBtn) {
+            soundBtn.textContent = soundEnabled ? 'مفعل' : 'معطل';
+            soundBtn.className = soundEnabled ? 'toolbar-btn' : 'toolbar-btn danger';
+        }
+    }
+
+    // تحديث الحالة
+    function updateStatus(text, status = 'normal') {
+        const statusText = document.getElementById('top-status-text');
+        const indicator = document.getElementById('top-status-indicator');
+
+        if (statusText) statusText.textContent = text;
+
+        if (indicator) {
+            indicator.className = 'status-indicator-top';
+            if (status === 'active') indicator.classList.add('active');
+            if (status === 'claiming') indicator.classList.add('claiming');
+        }
+    }
+
+    // إضافة إلى سجل المطالبات
+    function addToHistory(code, value, status) {
+        claimHistory.unshift({
+            code: code,
+            value: value,
+            status: status,
+            timestamp: new Date()
+        });
+
+        if (claimHistory.length > 50) {
+            claimHistory.pop();
+        }
+    }
+
+    // عرض السجل
+    function showHistory() {
+        const historyPanel = document.getElementById('toolbar-history-panel');
+        const historyContent = document.getElementById('history-content-top');
+
+        if (historyPanel && historyContent) {
+            historyPanel.style.display = 'block';
+
+            if (claimHistory.length === 0) {
+                historyContent.innerHTML = '<div style="text-align: center; color: #90a4ae; padding: 15px;">لا توجد مطالبات بعد</div>';
+            } else {
+                historyContent.innerHTML = claimHistory.map(item => `
+                    <div class="history-item-top">
+                        <div><strong style="font-size: 11px;">${item.code}</strong> - <span class="code-value-top">$${item.value}</span></div>
+                        <div style="color: ${item.status === 'success' ? '#4caf50' : '#f44336'}; font-size: 9px; margin-top: 3px;">
+                            ${item.status === 'success' ? '✅ نجح' : '❌ فشل'} - ${item.timestamp.toLocaleTimeString('ar-SA')}
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+    }
+
+    // إخفاء السجل
+    function hideHistory() {
+        const historyPanel = document.getElementById('toolbar-history-panel');
+        if (historyPanel) {
+            historyPanel.style.display = 'none';
+        }
+    }
+
+    // تفعيل/إيقاف المطالبة التلقائية
+    function toggleAutoClaim() {
+        autoClaimEnabled = !autoClaimEnabled;
+        updateAutoClaimButton();
+
+        if (autoClaimEnabled) {
+            updateStatus('المطالبة التلقائية مفعلة', 'active');
+            playSound('auto_claim_enabled');
+        } else {
+            updateStatus('المطالبة التلقائية معطلة');
+        }
+    }
+
+    // تفعيل/إيقاف الأصوات
+    function toggleSound() {
+        soundEnabled = !soundEnabled;
+        updateSoundButton();
+    }
+
+    // تشغيل الصوت
+    function playSound(type) {
+        if (!soundEnabled) return;
+
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            switch(type) {
+                case 'new_code':
+                    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+                    oscillator.type = 'sine';
+                    break;
+                case 'success':
+                    oscillator.frequency.setValueAtTime(600, audioContext.currentTime);
+                    oscillator.type = 'sine';
+                    break;
+                case 'error':
+                    oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+                    oscillator.type = 'square';
+                    break;
+                case 'auto_claim_enabled':
+                    oscillator.frequency.setValueAtTime(1000, audioContext.currentTime);
+                    oscillator.type = 'sine';
+                    break;
+            }
+
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.2);
+        } catch (e) {
+            console.log('🔊 لا يمكن تشغيل الصوت:', e);
+        }
+    }
+
+    // التحقق من صحة الرمز
+    function validateToken() {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: `${SERVER_URL}/api/validate-token`,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                data: JSON.stringify({
+                    token: SCRIPT_TOKEN
+                }),
+                onload: function(response) {
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        if (data.valid) {
+                            resolve(true);
+                        } else {
+                            reject(new Error(data.message || 'رمز غير صالح'));
+                        }
+                    } catch (e) {
+                        reject(e);
+                    }
+                },
+                onerror: function(error) {
+                    reject(new Error('خطأ في الاتصال بالسيرفر'));
+                }
+            });
+        });
+    }
+
+    // فحص الأكواد الجديدة
+    function checkForNewCodes() {
+        if (isClaiming) {
+            updateStatus('قيد المطالبة...', 'claiming');
+            return;
+        }
+
+        updateStatus('جاري الفحص...', 'claiming');
+
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: `${SERVER_URL}/api/codes/pending`,
+            headers: {
+                'Script-Token': SCRIPT_TOKEN,
+                'Content-Type': 'application/json'
+            },
+            onload: function(response) {
+                try {
+                    if (response.status === 401) {
+                        updateStatus('اشتراك غير مفعل', 'error');
+                        playSound('error');
+                        alert('❌ اشتراكك غير مفعل أو انتهت صلاحيته.');
+                        return;
+                    }
+
+                    const data = JSON.parse(response.responseText);
+                    if (data.length > 0) {
+                        playSound('new_code');
+                        processCode(data[0]);
+                    } else {
+                        updateStatus('متصل - لا توجد أكواد', 'active');
+                    }
+                } catch (e) {
+                    console.error('خطأ في تحليل البيانات:', e);
+                    updateStatus('خطأ في البيانات', 'error');
+                    playSound('error');
+                }
+            },
+            onerror: function(error) {
+                console.error('خطأ في الاتصال بالسيرفر:', error);
+                updateStatus('خطأ في الاتصال', 'error');
+                playSound('error');
+            }
+        });
+    }
+
+    // محاكاة إدخال الكود في الموقع بشكل فعلي (محسّنة)
+    function simulateCodeEntry(code) {
+        return new Promise((resolve, reject) => {
+            console.log(`🎯 محاولة إدخال الكود: ${code}`);
+
+            // البحث عن حقول الإدخال حسب الاسم والقسم (من السكربت القديم)
+            let codeInput = null;
+            const inputs = Array.from(document.querySelectorAll('input[name="code"]'));
+
+            for (const inp of inputs) {
+                const section = inp.closest('section') || inp.closest('div');
+                if (section && section.innerText.includes("توزيع المكافآت")) {
+                    codeInput = inp;
+                    break;
+                }
+            }
+
+            // إذا ما لقى حسب الاسم، يجرب الطرق القديمة
+            if (!codeInput) {
+                const inputSelectors = [
+                    'input[placeholder*="code"]',
+                    'input[placeholder*="كود"]',
+                    'input[name*="code"]',
+                    'input[id*="code"]',
+                    'input[type="text"]'
+                ];
+
+                for (let selector of inputSelectors) {
+                    const inputs = document.querySelectorAll(selector);
+                    for (let input of inputs) {
+                        if (input.offsetParent !== null && !input.disabled && !input.readOnly) {
+                            codeInput = input;
+                            break;
+                        }
+                    }
+                    if (codeInput) break;
+                }
+            }
+
+            if (codeInput) {
+                // مسح أي قيمة سابقة
+                codeInput.value = '';
+
+                // كتابة الكود
+                codeInput.focus();
+                codeInput.value = code;
+
+                // تشغيل الأحداث علشان الموقع يحس بالتغيير
+                codeInput.dispatchEvent(new Event('input', { bubbles: true }));
+                codeInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+                console.log(`✅ تم إدخال الكود في الحقل:`, codeInput);
+
+                // الانتظار قليل علشان الموقع يعالج الإدخال
+                setTimeout(() => {
+                    resolve(codeInput);
+                }, 500);
+            } else {
+                console.error('❌ ما لقينا حقل إدخال الكود');
+                reject(new Error('ما لقينا حقل إدخال الكود'));
+            }
+        });
+    }
+
+    // دالة محسّنة للضغط على زر الإرسال
+    function clickSubmitButton() {
+        return new Promise((resolve) => {
+            console.log('👆 محاولة الضغط على زر الإرسال');
+
+            // البحث عن زر "إرسال" في قسم "توزيع المكافآت" (من السكربت القديم)
+            const allButtons = Array.from(document.querySelectorAll('button'));
+            const sendButtons = allButtons.filter(btn =>
+                btn.innerText && btn.innerText.trim() === "إرسال"
+            );
+
+            let submitButton = null;
+            for (const btn of sendButtons) {
+                const section = btn.closest('section') || btn.closest('div');
+                if (section && section.innerText.includes("توزيع المكافآت")) {
+                    submitButton = btn;
+                    break;
+                }
+            }
+
+            // إذا ما لقى الزر حسب النص، يجرب الطرق القديمة
+            if (!submitButton) {
+                const submitSelectors = [
+                    'button[type="submit"]',
+                    'button[class*="submit"]',
+                    'button[class*="claim"]',
+                    'button[class*="send"]',
+                    'button'
+                ];
+
+                for (let selector of submitSelectors) {
+                    const buttons = document.querySelectorAll(selector);
+                    for (let button of buttons) {
+                        const text = (button.textContent || button.innerText || '').toLowerCase();
+                        if (button.offsetParent !== null &&
+                            (text.includes('submit') || text.includes('إرسال') ||
+                             text.includes('claim') || text.includes('مطالبة') ||
+                             text.includes('send'))) {
+                            submitButton = button;
+                            break;
+                        }
+                    }
+                    if (submitButton) break;
+                }
+            }
+
+            if (submitButton) {
+                submitButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setTimeout(() => {
+                    submitButton.click();
+                    console.log(`✅ ضغطت على زر الإرسال:`, submitButton.textContent || submitButton.innerText);
+                    resolve(true);
+                }, 300);
+            } else {
+                console.error('❌ ما لقينا زر الإرسال');
+                resolve(false);
+            }
+        });
+    }
+
+    // دالة محسّنة لاختيار العملة
+    function selectCurrency(currency = 'USDT') {
+        return new Promise((resolve) => {
+            console.log(`💱 محاولة اختيار العملة: ${currency}`);
+
+            // البحث عن العملة حسب النص (من السكربت القديم)
+            let currencyElement = null;
+            const elements = Array.from(document.querySelectorAll('*'));
+            for (const el of elements) {
+                if (el.innerText && el.innerText.trim().toUpperCase() === currency.toUpperCase()) {
+                    const section = el.closest('section') || el.closest('div');
+                    if (section) {
+                        currencyElement = el;
+                        break;
+                    }
+                }
+            }
+
+            // إذا ما لقى العملة حسب النص، يجرب الطرق القديمة
+            if (!currencyElement) {
+                const currencySelectors = [
+                    '[name="currency"]',
+                    '[id*="currency"]',
+                    '[class*="currency"]',
+                    'select[name*="Cur"]',
+                    'select[id*="Cur"]',
+                    'select'
+                ];
+
+                for (let selector of currencySelectors) {
+                    const selects = document.querySelectorAll(selector);
+                    for (let select of selects) {
+                        if (select.offsetParent !== null) {
+                            currencyElement = select;
+                            break;
+                        }
+                    }
+                    if (currencyElement) break;
+                }
+            }
+
+            if (currencyElement) {
+                currencyElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setTimeout(() => {
+                    currencyElement.click();
+                    console.log(`✅ تم اختيار العملة: ${currency}`);
+                    resolve(true);
+                }, 300);
+            } else {
+                console.log('⚠️ ما لقينا العملة، بنساوي على القيمة الافتراضية');
+                resolve(false);
+            }
+        });
+    }
+
+    // معالجة الكود (محسّنة)
+    function processCode(codeData) {
+        if (isClaiming) return;
+
+        isClaiming = true;
+        updateStatus(`جاري معالجة الكود: ${codeData.code}`, 'claiming');
+        playSound('new_code');
+
+        // تنفيذ الخطوات بالترتيب
+        simulateCodeEntry(codeData.code)
+            .then(() => {
+                // الخطوة 1: إدخال الكود وإرساله
+                return clickSubmitButton();
+            })
+            .then((success) => {
+                if (!success) throw new Error('فشل الضغط على زر الإرسال الأول');
+                // الخطوة 2: الانتظار قليل علشان تظهر نافذة اختيار العملة
+                return new Promise(resolve => setTimeout(resolve, 1500));
+            })
+            .then(() => {
+                // الخطوة 3: اختيار العملة
+                return selectCurrency('USDT');
+            })
+            .then(() => {
+                // الخطوة 4: الانتظار قليل ثم الضغط على إرسال مرة ثانية
+                return new Promise(resolve => setTimeout(resolve, 1000));
+            })
+            .then(() => {
+                // الضغط على زر الإرسال الثاني (إذا لازم)
+                return clickSubmitButton();
+            })
+            .then(() => {
+                // الخطوة 5: إرسال نتيجة العملية للسيرفر
+                return sendCodeValue(codeData.id, codeData.value || 0, codeData.code);
+            })
+            .then(() => {
+                updateStatus(`✅ تم استخدام الكود: ${codeData.code}`, 'active');
+                addToHistory(codeData.code, codeData.value || 0, 'success');
+                playSound('success');
+                isClaiming = false;
+
+                // إذا كانت المطالبة التلقائية مفعلة، نستمر في الفحص
+                if (autoClaimEnabled) {
+                    setTimeout(checkForNewCodes, 1000);
+                }
+            })
+            .catch((error) => {
+                console.error('خطأ في معالجة الكود:', error);
+                updateStatus(`❌ خطأ في الكود: ${codeData.code}`, 'error');
+                addToHistory(codeData.code, codeData.value || 0, 'failed');
+                playSound('error');
+                isClaiming = false;
+            });
+    }
+
+    // Turbo Claim - مطالبة سريعة
+    function turboClaim() {
+        updateStatus('🚀 Turbo Claim قيد التشغيل...', 'claiming');
+        playSound('new_code');
+
+        // محاكاة مطالبة سريعة
+        setTimeout(() => {
+            updateStatus('✅ Turbo Claim اكتمل', 'active');
+            playSound('success');
+        }, 2000);
+    }
+
+    // إرسال قيمة الكود للسيرفر
+    function sendCodeValue(codeId, value, code) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: `${SERVER_URL}/api/codes/${codeId}/claim`,
+                headers: {
+                    'Script-Token': SCRIPT_TOKEN,
+                    'Content-Type': 'application/json'
+                },
+                data: JSON.stringify({
+                    value: value,
+                    currency: 'USDT'
+                }),
+                onload: function(response) {
+                    if (response.status === 200) {
+                        resolve();
+                    } else if (response.status === 401) {
+                        updateStatus('اشتراك غير مفعل', 'error');
+                        playSound('error');
+                        alert('❌ اشتراكك غير مفعل أو انتهت صلاحيته.');
+                        reject(new Error('غير مفعل'));
+                    } else {
+                        reject(new Error('خطأ في استخدام الكود'));
+                    }
+                },
+                onerror: function(error) {
+                    console.error('خطأ في إرسال قيمة الكود:', error);
+                    reject(error);
+                }
+            });
+        });
+    }
+
+    // دالة انتظار تحميل الصفحة
+    function waitForPageLoad() {
+        return new Promise((resolve) => {
+            if (document.readyState === 'complete') {
+                resolve();
+            } else {
+                window.addEventListener('load', resolve);
+            }
+        });
+    }
+
+    // بدء التشغيل
+    async function init() {
+        try {
+            // انتظار تحميل الصفحة بالكامل
+            await waitForPageLoad();
+
+            // انتظار إضافي للتأكد من تحميل المحتوى
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            createTopBarStyles();
+            createTopToolbar();    // إنشاء شريط الأدوات العلوي
+            createHistoryPanel();  // إنشاء نافذة السجل
+
+            // التحقق من صحة الرمز
+            validateToken()
+                .then(() => {
+                    updateStatus('متصل ومفعل', 'active');
+                    playSound('success');
+
+                    // بدء الفحص الدوري كل 3 ثوانٍ إذا كانت المطالبة التلقائية مفعلة
+                    setInterval(() => {
+                        if (autoClaimEnabled) {
+                            checkForNewCodes();
+                        }
+                    }, 3000);
+
+                    // فحص فوري عند التحميل
+                    setTimeout(checkForNewCodes, 1000);
+
+                    console.log('🎯 Stake Code Claimer Top Bar تم تفعيله بنجاح');
+                })
+                .catch((error) => {
+                    updateStatus('غير مفعل', 'error');
+                    playSound('error');
+                    alert(`❌ خطأ في تفعيل السكربت: ${error.message}\nيرجى التأكد من اشتراكك.`);
+                    console.error('خطأ في التحقق من الرمز:', error);
+                });
+        } catch (error) {
+            console.error('خطأ في تهيئة السكربت:', error);
+        }
+    }
+
+    // تشغيل السكربت بعد تأخير صغير للتأكد من تحميل الصفحة
+    setTimeout(init, 2500);
+
+})();
